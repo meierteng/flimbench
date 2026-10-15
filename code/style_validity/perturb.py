@@ -62,6 +62,8 @@ def coarse_grain(x, k, t, *a):                 # same grain strength, growing gr
     rng = np.random.default_rng(1000 * t + 7); g = rng.normal(0, 1, x.shape[:2]).astype(np.float32)
     g = cv2.GaussianBlur(g, (0, 0), (.5 + .7 * k) * x.shape[1] / 1280); g /= g.std() + 1e-6
     return x + .025 * g[..., None]
+def grain_static(x, k, t, *a):                 # the same grain pattern on every frame (like a fixed texture)
+    return grain(x, k, 0)
 def shake(x, k, t, *a):
     rng = np.random.default_rng(t + 11); h, w = x.shape[:2]; d = rng.normal(0, .006 * k, 2) * w
     M = np.float32([[1.06, 0, -.03 * w + d[0]], [0, 1.06, -.03 * h + d[1]]]); return cv2.warpAffine(x, M, (w, h), borderMode=cv2.BORDER_REFLECT)
@@ -73,11 +75,12 @@ EDITS = {   # name: (fn, target metric, expected sign, apply to native frames to
     "lift_black": (lift, "GR3_black_p2", +1), "vignette": (vignette, "GR13_vignette", -1), "zoom": (zoom, "CA1_face_size", +1),
     "roll": (roll, "CA4_roll_deg", +1), "blur_bg": (blur_bg, "CA8_dof_ratio", +1), "blur_all": (blur_all, "TX5_edge_width", +1), "grain_size": (coarse_grain, "TX2_grain_size", -1),
     "grain": (grain, "TX1_grain", +1), "halation": (halation, "TX6_halation", +1), "mirror": (mirror, "CO2_symmetry", +1),
-    "pan": (pan, "CM5_pan_signed", -1), "push": (push, "CM6_zoom_scale", +1), "shake": (shake, "CM4_shake", +1),
+    "pan": (pan, "CM5_pan_signed", -1),
+    "grain_dynamic": (grain, "TX9_grain_temporal_corr", -1), "grain_static": (grain_static, "TX9_grain_temporal_corr", +1), "push": (push, "CM6_zoom_scale", +1), "shake": (shake, "CM4_shake", +1),
 }
 WATCH = ["CL4_warmth_b", "CL4_tint_a", "CL5_chroma", "CL6_colorfulness", "GR1_luma", "GR2_contrast", "GR3_black_p2", "GR4_white_p98",
          "GR7_split_b", "GR12_lum_explained_b", "GR13_vignette", "LI3_key_side", "LI2_face_lr_stops", "LI8_light_color_spread",
-         "CA1_face_size", "CA4_roll_deg", "CA8_dof_ratio", "CO2_symmetry", "TX1_grain", "TX2_grain_size", "TX5_edge_width", "TX6_halation", "CM5_pan_signed",
+         "CA1_face_size", "CA4_roll_deg", "CA8_dof_ratio", "CO2_symmetry", "TX1_grain", "TX2_grain_size", "TX5_edge_width", "TX9_grain_temporal_corr", "TX9_grain_temporal_ratio", "TX9_repeat_blocks", "TX6_halation", "CM5_pan_signed",
          "CM3_cam_speed", "CM5_pan", "CM6_zoom_scale", "CM4_shake"]
 
 
@@ -88,7 +91,8 @@ def pick_shots(path, n_shots=3):
     nat = {}
     for k, f in native.items():
         if s0 <= k < s1:
-            sc = f.shape[1] / X.WORK_W; nat[k - s0] = f[int(t * sc): int(b * sc), int(l * sc): int(r * sc)]
+            f0, f1 = f; sc = f0.shape[1] / X.WORK_W; cr = lambda x: None if x is None else x[int(t * sc): int(b * sc), int(l * sc): int(r * sc)]
+            nat[k - s0] = (cr(f0), cr(f1))
     scenes, _ = X.transnet_cuts(thumbs); out = []
     for st, en in scenes:
         a, b2 = max(int(np.ceil(st / step)) - s0, 0), min(en // step + 1 - s0, len(fs))
@@ -103,14 +107,19 @@ def run_clip(args):
     path, vid = args; rows = []
     for si, (seg, nseg, fps) in enumerate(pick_shots(path)):
         d0 = X.faces(seg[len(seg) // 2]); m = X.body_mask(seg[0].shape, d0)
-        base = [f.astype(np.float32) / 255 for f in seg]; nbase = [f.astype(np.float32) / 255 for f in nseg]
+        base = [f.astype(np.float32) / 255 for f in seg]
+        nbase = [(p[0].astype(np.float32) / 255, None if p[1] is None else p[1].astype(np.float32) / 255) for p in nseg]
         for name, (fn, tgt, sign) in EDITS.items():
             for k in LEVELS:
                 ed = [(np.clip(fn(x, k, t, len(base), m), 0, 1) * 255).astype(np.uint8) for t, x in enumerate(base)]
-                ned = [(np.clip(fn(x, k, min(t * X.TEX_EVERY, len(base) - 1), len(base), m), 0, 1) * 255).astype(np.uint8) for t, x in enumerate(nbase)]
+                u8 = lambda z: (np.clip(z, 0, 1) * 255).astype(np.uint8)
+                ned = []
+                for t, (x0, x1) in enumerate(nbase):
+                    tt = min(t * X.TEX_EVERY, len(base) - 1); t2 = tt + 50000 if name in ("grain", "grain_dynamic", "grain_size") else tt
+                    ned.append((u8(fn(x0, k, tt, len(base), m)), None if x1 is None else u8(fn(x1, k, t2, len(base), m))))
                 met, _ = X.shot_metrics(ed, ned, fps)
                 rows.append(dict(shot=f"{vid}_{si}", edit=name, level=k, **{w: met.get(w, np.nan) for w in WATCH}))
-        rows += grain_compression(nseg, f"{vid}_{si}")
+        rows += grain_compression([p[0] for p in nseg], f"{vid}_{si}")
     return rows
 
 
@@ -134,6 +143,19 @@ def grain_compression(nseg, shot_id):
         dec = np.frombuffer(d.stdout, np.uint8).reshape(-1, h, w, 3)[3::6]
         tx = X.texture(list(dec))
         rows.append(dict(shot=shot_id, edit="grain_after_x264", level=k, TX1_grain=tx.get("TX1_grain", np.nan)))
+    still = frames[0][:h, :w]
+    for kind, fn in [("dyn_grain_after_x264", grain), ("static_grain_after_x264", grain_static)]:
+        for k in LEVELS:
+            seq = [(np.clip(fn(still, k, t), 0, 1) * 255).astype(np.uint8) for t in range(24)]
+            kbps = int(1500 * (w * h) / (1920 * 1080)) + 300
+            p = subprocess.run([ff, "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{w}x{h}", "-r", "24", "-i", "-",
+                                "-c:v", "libx264", "-b:v", f"{kbps}k", "-preset", "medium", "-f", "matroska", "-"],
+                               input=b"".join(x.tobytes() for x in seq), capture_output=True)
+            d = subprocess.run([ff, "-loglevel", "error", "-i", "-", "-f", "rawvideo", "-pix_fmt", "bgr24", "-"], input=p.stdout, capture_output=True)
+            dec = np.frombuffer(d.stdout, np.uint8).reshape(-1, h, w, 3)
+            tx = X.texture([(dec[i], dec[i + 1]) for i in (6, 12, 18)])
+            rows.append(dict(shot=shot_id, edit=kind, level=k, TX9_grain_temporal_corr=tx.get("TX9_grain_temporal_corr", np.nan),
+                             TX9_grain_temporal_ratio=tx.get("TX9_grain_temporal_ratio", np.nan), TX9_repeat_blocks=tx.get("TX9_repeat_blocks", np.nan)))
     return rows
 
 
@@ -148,6 +170,7 @@ if __name__ == "__main__":
         rows = [r for rs in ex.map(run_clip, [(files[v], v) for v in cl.videoid]) for r in rs]
     df = pd.DataFrame(rows); df.to_csv(os.path.join(a.outdir, "perturb_raw.csv"), index=False)
     allE = dict(EDITS); allE["grain_after_x264"] = (None, "TX1_grain", +1)
+    allE["dyn_grain_after_x264"] = (None, "TX9_grain_temporal_corr", -1); allE["static_grain_after_x264"] = (None, "TX9_grain_temporal_corr", +1)
     sens = []
     for name, (_, tgt, sign) in allE.items():
         d = df[df.edit == name].pivot(index="shot", columns="level", values=tgt).dropna()

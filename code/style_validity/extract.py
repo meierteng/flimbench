@@ -10,8 +10,10 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 HERE = os.path.dirname(os.path.abspath(__file__))
 SFPS = 6.0          # analysis frame rate
 WORK_W = 480        # working width for most metrics
+TEX_W = 1280        # common working width for texture and decoding (720p), note 25b
 TEX_EVERY = 6       # keep a native-resolution frame every 6 analysis frames (1 per second) for texture metrics
 _YN = None
+GENERATED = os.environ.get("SB_GENERATED") == "1"   # set for generated clips
 
 
 # ---------------------------------------------------------------- io
@@ -22,8 +24,9 @@ def _frames(path):
     cap = cv2.VideoCapture(path); fps = cap.get(cv2.CAP_PROP_FPS) or 24
     w, h = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)); cap.release()
     mat = "bt709" if h >= 720 else "bt601"
-    cmd = [imageio_ffmpeg.get_ffmpeg_exe(), "-loglevel", "error", "-threads", "1", "-i", path, "-an",
-           "-vf", f"scale=in_color_matrix={mat}:in_range=tv:out_range=pc,format=bgr24", "-f", "rawvideo", "-"]
+    if w > TEX_W: w, h = TEX_W, int(round(h * TEX_W / w / 2)) * 2      # decode straight to the common 1280 px width
+    cmd = [imageio_ffmpeg.get_ffmpeg_exe(), "-loglevel", "error", "-threads", "2", "-i", path, "-an",
+           "-vf", f"scale={w}:{h}:flags=area:in_color_matrix={mat}:in_range=tv:out_range=pc,format=bgr24", "-f", "rawvideo", "-"]
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, bufsize=w * h * 3 * 4)
     def gen():
         n = w * h * 3
@@ -39,12 +42,13 @@ def _frames(path):
 
 def read_clip(path):
     it, fps = _frames(path); step = max(1, round(fps / SFPS))
-    small, native, thumbs, i, k = [], {}, [], 0, 0
+    small, native, thumbs, i, k, pend = [], {}, [], 0, 0, None
     for f in it:
         thumbs.append(cv2.resize(f, (48, 27), interpolation=cv2.INTER_AREA)[..., ::-1])
+        if pend is not None: native[pend][1] = f.copy(); pend = None   # next raw frame, for temporal grain
         if i % step == 0:
             small.append(cv2.resize(f, (WORK_W, int(round(WORK_W * f.shape[0] / f.shape[1]))), interpolation=cv2.INTER_AREA))
-            if k % TEX_EVERY == 0: native[k] = f.copy()
+            if k % TEX_EVERY == 0: native[k] = [f.copy(), None]; pend = k
             k += 1
         i += 1
     return small, native, fps / step, np.stack(thumbs) if thumbs else None, step
@@ -415,7 +419,6 @@ def vanishing(L, w, h):
     return float(np.mean(d < r)), float(1 - np.hypot(vx - w / 2, vy - h / 2) / (np.hypot(w, h) / 2))
 
 
-TEX_W = 1280         # texture is measured at one common width (720p) so 720p and 1080p sources are comparable (note 25b)
 GRAIN_BANDS = np.linspace(12, 245, 9)
 
 
@@ -437,15 +440,39 @@ def edge_width(Y, max_pts=1500):
     return float(np.median(ws)) if len(ws) >= 30 else np.nan
 
 
+def temporal_grain(Y, Y2):
+    """Grain over time on a consecutive frame pair: film grain is a new random pattern every frame, surface texture and
+    generator texture repeat, and low-bitrate encoders repeat skipped blocks. Measured only on smooth, static regions.
+    Returns (lag-1 residual correlation, frame-difference ratio, share of repeated 16x16 blocks)."""
+    res, res2 = Y - cv2.GaussianBlur(Y, (0, 0), 1.5), Y2 - cv2.GaussianBlur(Y2, (0, 0), 1.5)
+    loc, loc2 = cv2.GaussianBlur(Y, (0, 0), 3), cv2.GaussianBlur(Y2, (0, 0), 3)
+    m = (cv2.blur(np.abs(cv2.Laplacian(loc, cv2.CV_32F)), (15, 15)) < 1.0) & (loc > 12) & (loc < 245)
+    m &= cv2.blur(np.abs(loc2 - loc), (15, 15)) < 0.8                  # static between the two frames
+    if m.mean() < .01: return np.nan, np.nan, np.nan
+    corr = float(np.corrcoef(res[m], res2[m])[0, 1])
+    ratio = float((res2[m] - res[m]).std() / (np.sqrt(2) * res[m].std() + 1e-6))   # 1 = independent, 0 = identical
+    H_, W_ = (Y.shape[0] // 16) * 16, (Y.shape[1] // 16) * 16
+    d = np.abs(res2 - res)[:H_, :W_].reshape(H_ // 16, 16, W_ // 16, 16).mean((1, 3))
+    mb = m[:H_, :W_].reshape(H_ // 16, 16, W_ // 16, 16).mean((1, 3)) > .9
+    rep = float(np.mean(d[mb] < .25)) if mb.sum() >= 10 else np.nan
+    return corr, ratio, rep
+
+
 def texture(natives):
     """Grain, edge width, halation and bloom, measured on frames resized to a common 1280 px width (luma 0..255)."""
     out = {}
     if not natives: return out
     gs, gsz, curve, xc, ew, hal, bloom = [], [], [[] for _ in range(len(GRAIN_BANDS) - 1)], [], [], [], []
     hann = np.outer(np.hanning(64), np.hanning(64)); yy_, xx_ = np.mgrid[-32:32, -32:32]; rr = np.hypot(xx_, yy_); ring = (rr > 1) & (rr < 32)
-    for f in natives:
-        if f.shape[1] > TEX_W: f = cv2.resize(f, (TEX_W, int(round(TEX_W * f.shape[0] / f.shape[1]))), interpolation=cv2.INTER_AREA)
+    tcorr, tratio, trep = [], [], []
+    rs_ = lambda x: x if x.shape[1] <= TEX_W else cv2.resize(x, (TEX_W, int(round(TEX_W * x.shape[0] / x.shape[1]))), interpolation=cv2.INTER_AREA)
+    for item in natives:
+        f, f2 = item if isinstance(item, (tuple, list)) else (item, None)
+        f = rs_(f)
         Y = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY).astype(np.float32)
+        if f2 is not None and f2.shape == item[0].shape:
+            c_, r_, p_ = temporal_grain(Y, cv2.cvtColor(rs_(f2), cv2.COLOR_BGR2GRAY).astype(np.float32))
+            tcorr.append(c_); tratio.append(r_); trep.append(p_)
         res = Y - cv2.GaussianBlur(Y, (0, 0), 1.5)
         loc = cv2.GaussianBlur(Y, (0, 0), 3)
         flat = cv2.blur(np.abs(cv2.Laplacian(loc, cv2.CV_32F)), (15, 15)) < 1.0      # smooth regions only
@@ -480,7 +507,8 @@ def texture(natives):
     med = lambda v: float(np.nanmedian(v)) if len(v) and np.isfinite(v).any() else np.nan
     cv_ = [med(c) for c in curve]
     out.update(TX1_grain=med(gs), TX2_grain_size=med(gsz), TX4_grain_chroma_corr=med(xc), TX5_edge_width=med(ew),
-               TX6_halation=med(hal), TX7_bloom=med(bloom), TX3_grain_curve=[round(v, 3) if v == v else None for v in cv_])
+               TX6_halation=med(hal), TX7_bloom=med(bloom), TX9_grain_temporal_corr=med(tcorr), TX9_grain_temporal_ratio=med(tratio),
+               TX9_repeat_blocks=med(trep), TX3_grain_curve=[round(v, 3) if v == v else None for v in cv_])
     sh, mi, hi_ = np.nanmean(cv_[:3]) if np.isfinite(cv_[:3]).any() else np.nan, np.nanmean(cv_[3:6]) if np.isfinite(cv_[3:6]).any() else np.nan, \
         np.nanmean(cv_[6:]) if np.isfinite(cv_[6:]).any() else np.nan
     out.update(TX3_grain_sh=sh, TX3_grain_mid=mi, TX3_grain_hi=hi_, TX3_mid_over_sh=mi / sh if sh == sh and mi == mi and sh > 0 else np.nan)
@@ -502,10 +530,13 @@ def process_clip(args):
     vid = meta["videoid"]; dst = os.path.join(outdir, "shots", vid + ".json")
     if os.path.exists(dst): return vid, "skip"
     small, native, fps, thumbs, step = read_clip(path)
-    if len(small) < 20: return vid, "too_short"
-    s0, s1 = int(2 * fps), len(small) - int(3 * fps)
-    ec = [i for i in range(max(s0, s1 - int(60 * fps)), s1) if endcard(small[i])]
-    s1 = ec[0] if ec else s1
+    if len(small) < (8 if GENERATED else 20): return vid, "too_short"
+    if GENERATED:                                   # generated clips: no channel intro, outro or end card to trim
+        s0, s1 = 0, len(small)
+    else:
+        s0, s1 = int(2 * fps), len(small) - int(3 * fps)
+        ec = [i for i in range(max(s0, s1 - int(60 * fps)), s1) if endcard(small[i])]
+        s1 = ec[0] if ec else s1
     fs = small[s0:s1]
     t, b, l, r = crop_box(fs); sc = None
     fs = [f[t:b, l:r] for f in fs]
@@ -513,7 +544,8 @@ def process_clip(args):
     nat = {}
     for k, f in native.items():
         if s0 <= k < s1:
-            sc = f.shape[1] / WORK_W; nat[k - s0] = f[int(t * sc): int(b * sc), int(l * sc): int(r * sc)]
+            f0, f1 = f; sc = f0.shape[1] / WORK_W; cr = lambda x: None if x is None else x[int(t * sc): int(b * sc), int(l * sc): int(r * sc)]
+            nat[k - s0] = (cr(f0), cr(f1))
     scenes, gradual = transnet_cuts(thumbs)
     bounds = []
     for st, en in scenes:                                   # native frames -> analysis frames within [s0, s1)
@@ -546,6 +578,7 @@ def process_clip(args):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(); ap.add_argument("cliplist"); ap.add_argument("clipdir"); ap.add_argument("outdir")
     ap.add_argument("--n", type=int, default=0); ap.add_argument("--workers", type=int, default=4); ap.add_argument("--ids", default="")
+    ap.add_argument("--shard", type=int, default=0); ap.add_argument("--nshards", type=int, default=1)
     a = ap.parse_args()
     os.makedirs(os.path.join(a.outdir, "shots"), exist_ok=True)
     cl = pd.read_csv(a.cliplist)
@@ -554,6 +587,7 @@ if __name__ == "__main__":
     cl = cl[cl.videoid.isin(files)]
     if a.ids: cl = cl[cl.videoid.isin(a.ids.split(","))]
     if a.n: cl = cl.groupby("style").head(max(1, a.n // cl["style"].nunique()))
+    cl = cl.sort_values("videoid").iloc[a.shard::a.nshards]
     jobs = [(files[r.videoid], r._asdict(), a.outdir) for r in cl.itertuples(index=False)]
     print(f"{len(jobs)} clips", flush=True)
     with ProcessPoolExecutor(a.workers) as ex, open(os.path.join(a.outdir, "clip_errors.txt"), "a") as err:
