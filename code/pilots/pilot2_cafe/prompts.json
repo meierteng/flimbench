@@ -1,0 +1,39 @@
+{
+ "content": {
+  "cafe": "Two people sit across from each other at a cafe table, talking quietly over coffee. Then they stand up and walk out of the cafe together."
+ },
+ "styles": {
+  "none": "",
+  "nolan": " In the style of a Christopher Nolan film.",
+  "burton": " In the style of a Tim Burton film.",
+  "kubrick": " In the style of a Stanley Kubrick film.",
+  "wes_anderson": " In the style of a Wes Anderson film.",
+  "zhang_yimou": " In the style of a Zhang Yimou film.",
+  "spielberg": " In the style of a Steven Spielberg film."
+ },
+ "styles_desc": {
+  "nolan": " restrained natural cafe palette, side-window soft key with warm practicals, clean opposing staging at a small table, medium two-shot to wider exit shot, eye-level near-symmetrical composition, 35–50mm lens, smooth motivated dolly, naturalistic photochemical grade, firm contrast, fine grain, standard motion blur, 2 shots with a single straight cut on the stand.",
+  "burton": " storybook Gothic cafe, warped dark-wood set, charcoal and dusty-blue palette, side-window key with warm practical fill, centered symmetrical staging breaking as they stand, medium-wide to full-figure low eye-level frames, 28–35mm lens, subtle push-in then restrained dolly drift, cool desaturated blue-gray grade, strong contrast, fine film grain, slight vignette, 3 clean straight-cut shots over 8 seconds.",
+  "kubrick": " rigorous symmetrical cafe staging, muted cream brown and dull red palette, even side-window and hidden frontal fill, mirror-like blocking across a centered table, static frontal medium-wide at seated eye level, 28-35mm lens, restrained axial movement, neutral-cool photochemical grade, firm contrast, fine 35mm grain, deep focus, 24fps, two hard-cut shots.",
+  "wes_anderson": " strict symmetry, centered cafe table and doorway, muted mustard teal cream palette, soft warm even frontal lighting, orderly staging, locked-off planimetric medium-wide then wider frontal full-body shot, 35mm lens, minimal movement, warm matte grade with lifted blacks and fine 35mm grain, crisp deadpan hard cut midway.",
+  "zhang_yimou": " controlled warm-red and cream cafe palette, soft directional late-afternoon side light, balanced symmetrical staging, composed medium two-shot to wider exit shot, eye-level camera, 40-50mm lens, subtle smooth drift or track, rich disciplined color grading, medium-high contrast, fine film grain, fluid natural motion, two clean cuts only.",
+  "spielberg": " warm wood-and-cream cafe, soft side-window key with practical amber fill and gentle back edge, balanced medium two-shot on 35-40mm at seated eye level, subtle push-in then smooth pan/boom to medium-wide as they stand and exit, restrained warm classical grade, moderate contrast, light film grain, smooth natural motion blur, 2 shots with one straight cut at the rise."
+ },
+ "seeds": [
+  1
+ ],
+ "models": {
+  "alibaba/wan-3.0": {
+   "duration": 8,
+   "resolution": "480p",
+   "aspect_ratio": "16:9",
+   "generate_audio": false
+  },
+  "google/veo-3.1-lite": {
+   "duration": 8,
+   "resolution": "720p",
+   "aspect_ratio": "16:9",
+   "generate_audio": false
+  }
+ }
+}

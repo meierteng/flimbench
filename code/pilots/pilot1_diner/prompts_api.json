@@ -1,0 +1,48 @@
+{
+ "content": {
+  "diner": "Two people sit across from each other at a diner table, talking quietly over coffee."
+ },
+ "styles": {
+  "none": "",
+  "nolan": ", in the style of a Christopher Nolan film",
+  "burton": ", in the style of a Tim Burton film",
+  "kubrick": ", in the style of a Stanley Kubrick film",
+  "wes_anderson": ", in the style of a Wes Anderson film",
+  "zhang_yimou": ", in the style of a Zhang Yimou film",
+  "spielberg": ", in the style of a Steven Spielberg film"
+ },
+ "seeds": [
+  1,
+  2
+ ],
+ "models": {
+  "alibaba/wan-3.0": {
+   "duration": 5,
+   "resolution": "720p",
+   "aspect_ratio": "16:9",
+   "generate_audio": false
+  },
+  "google/veo-3.1-lite": {
+   "duration": 4,
+   "resolution": "720p",
+   "aspect_ratio": "16:9",
+   "generate_audio": false
+  }
+ },
+ "styles_traits": {
+  "nolan": ", shot on large-format film, cool desaturated blue-gray palette, naturalistic practical lighting, wide lens, restrained camera",
+  "burton": ", gothic expressionist look, high contrast, deep shadows, pale faces against dark backgrounds, stylized production design",
+  "kubrick": ", one-point perspective, symmetrical centered composition, wide-angle lens, slow dolly push-in, cold detached mood",
+  "wes_anderson": ", flat frontal camera angle, perfectly symmetrical centered composition, pastel color palette, meticulous production design, lateral tracking shot",
+  "zhang_yimou": ", large fields of saturated single colors such as red and yellow, symbolic use of color, ritualistic formal composition",
+  "spielberg": ", warm backlighting with visible light shafts, slow push-in toward the faces, long fluid take"
+ },
+ "styles_table": {
+  "nolan": ", cool gray-blue, low saturation, real locations, realistic and weighty, IMAX large format",
+  "burton": ", gothic, expressionist production design, pale characters against dark backgrounds, high contrast, black-and-white stripes",
+  "kubrick": ", one-point perspective, centered symmetry, wide-angle lens, slow dolly track, cold and detached",
+  "wes_anderson": ", frontal eye-level view, centered symmetry, pastel colors, meticulous sets, lateral tracking and pans",
+  "zhang_yimou": ", large areas of single colors such as red and yellow, color symbolism, ritualized composition",
+  "spielberg": ", warm backlight, light shafts, slow push-in to the faces, long take with staging"
+ }
+}

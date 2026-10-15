@@ -1,0 +1,19 @@
+Director,Trait (prompt wording),Metric,Expected,Real median,Real IQR,Real n shots,All-director median,Wan none,Wan name,Wan table,Veo none,Veo name,Veo table
+Nolan,cool gray-blue,warmth_b,lower,3.835,1.80 to 6.08,217,4.132,4.861,1.594,0.209,11.553,1.168,-6.164
+Nolan,low saturation,saturation,lower,0.331,0.24 to 0.41,217,0.360,0.352,0.414,0.303,0.414,0.173,0.275
+Nolan,IMAX large format,aspect,real only,2.410,2.26 to 2.42,217,2.110,,,,,,
+Burton,pale characters against dark backgrounds,face_minus_bg,higher,10.281,5.18 to 16.85,147,5.083,1.415,18.596,24.806,-5.094,17.522,19.538
+Burton,high contrast,contrast,higher,42.353,36.08 to 48.24,147,52.157,79.412,49.412,59.412,87.647,77.843,94.902
+Kubrick,one-point perspective,vp_converge,higher,0.811,0.70 to 0.93,49,0.750,0.696,0.849,1.000,0.771,0.650,0.793
+Kubrick,one-point perspective (VP centered),vp_center,higher,0.651,0.52 to 0.72,48,0.585,0.547,0.447,0.905,0.634,0.481,0.791
+Kubrick,centered symmetry,symmetry,higher,0.077,0.05 to 0.11,122,0.033,0.143,0.172,0.273,0.006,0.162,0.165
+Kubrick,slow dolly track,push_in,higher,-0.007,-0.03 to 0.01,122,-0.004,0.038,-0.004,0.843,0.034,-0.015,0.458
+Wes Anderson,frontal eye-level view,frontal_faces,higher,0.553,0.20 to 0.90,207,0.389,0.050,0.000,0.000,0.114,0.000,0.000
+Wes Anderson,centered symmetry,symmetry,higher,0.040,0.00 to 0.10,207,0.033,0.143,0.303,0.195,0.006,0.148,0.091
+Wes Anderson,pastel colors,pastel,higher,0.013,0.00 to 0.06,207,0.009,0.057,0.191,0.128,0.147,0.114,0.163
+Wes Anderson,lateral tracking and pans,lateral,higher,0.389,0.30 to 0.47,207,0.399,0.265,0.333,0.680,0.183,0.268,0.376
+Zhang Yimou,large areas of single colors such as red and yellow,red_yellow,higher,0.001,0.00 to 0.01,251,0.004,0.021,0.002,0.345,0.078,0.066,0.434
+Spielberg,warm backlight,warmth_b,higher,3.805,1.05 to 6.26,178,4.132,4.861,7.900,11.804,11.553,4.858,12.629
+Spielberg,"warm backlight, light shafts",backlight,higher,38.333,24.17 to 52.28,178,35.049,54.016,62.200,59.519,58.746,57.960,54.188
+Spielberg,slow push-in to the faces,face_growth,higher,0.018,-0.04 to 0.18,178,0.015,-0.037,-0.074,0.293,0.018,0.028,0.177
+Spielberg,long take,shot_seconds,higher,3.503,2.00 to 7.67,178,3.337,5.000,5.000,5.000,4.000,4.000,4.000

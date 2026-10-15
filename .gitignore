@@ -1,0 +1,9 @@
+*.mp4
+*.webm
+*.mkv
+*.jpg
+*.png
+*.onnx
+__pycache__/
+*.pyc
+.DS_Store
